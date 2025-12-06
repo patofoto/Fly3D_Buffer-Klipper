@@ -13,6 +13,7 @@ This repository contains Klipper configuration files for integrating the FLY-LLL
 
 - **`mellow_buffer_klipper.cfg`** - Basic buffer configuration with pin definitions, sensor setup, and manual feed/retract macros
 - **`mellow_buffer_macros.cfg`** - Advanced standalone integration with automatic filament unload and buffer retraction
+- **`mellow_buffer_user_settings.cfg`** - User-configurable variables (park positions, temperatures, speeds, etc.)
 
 ## Installation
 
@@ -22,10 +23,12 @@ This repository contains Klipper configuration files for integrating the FLY-LLL
    ```bash
    cp mellow_buffer_klipper.cfg ~/printer_data/config/
    cp mellow_buffer_macros.cfg ~/printer_data/config/
+   cp mellow_buffer_user_settings.cfg ~/printer_data/config/
    ```
 
 2. Add includes to your `printer.cfg`:
    ```ini
+   [include ./mellow_buffer_user_settings.cfg]
    [include ./mellow_buffer_klipper.cfg]
    [include ./mellow_buffer_macros.cfg]
    ```
@@ -57,13 +60,20 @@ For automatic updates, you can use Moonraker Update Manager to track the `standa
    managed_services: klipper
    ```
 
-3. **Update your `printer.cfg` includes to point to the tracked folder:**
+3. **Copy the user settings file to your config directory (outside tracked folder):**
+   ```bash
+   cp ~/printer_data/config/Fly3D_Buffer/mellow_buffer_user_settings.cfg ~/printer_data/config/
+   ```
+   This allows you to edit variables without Moonraker making them read-only.
+
+4. **Update your `printer.cfg` includes:**
    ```ini
+   [include ./mellow_buffer_user_settings.cfg]  # Your editable copy (outside tracked folder)
    [include ./Fly3D_Buffer/mellow_buffer_klipper.cfg]
    [include ./Fly3D_Buffer/mellow_buffer_macros.cfg]
    ```
 
-4. **Restart Moonraker:**
+5. **Restart Moonraker:**
    ```bash
    sudo systemctl restart moonraker
    ```
@@ -131,29 +141,46 @@ BUFFER_UNLOAD_FILAMENT TEMP=230          # Unload at 230°C
 BUFFER_UNLOAD_FILAMENT TEMP=230 COOL=Yes # Unload and cool down
 ```
 
-### Integration with Demon Klipper Essentials
+### User Settings Configuration
 
-The `mellow_buffer_macros.cfg` is designed to work **with or without** Demon Klipper Essentials Unified (DKEU):
+All user-configurable variables are in `mellow_buffer_user_settings.cfg`. This file should be **copied outside the tracked folder** when using Moonraker Update Manager, as Moonraker makes tracked files read-only.
 
-- If DKEU is installed, it will automatically use DKEU's configuration variables (park positions, unload lengths, etc.)
-- If DKEU is not installed, it uses default values defined in `_BUFFER_STANDALONE_VARS`
+#### Editing Variables with Moonraker
 
-You can customize the default values in `_BUFFER_STANDALONE_VARS` to match your printer's requirements.
+1. **Copy the settings file to your config directory:**
+   ```bash
+   cp ~/printer_data/config/Fly3D_Buffer/mellow_buffer_user_settings.cfg ~/printer_data/config/
+   ```
 
-### Customization
+2. **Edit your copy:**
+   ```bash
+   nano ~/printer_data/config/mellow_buffer_user_settings.cfg
+   ```
 
-#### Adjust Default Values
+3. **Update `printer.cfg` to include your copy:**
+   ```ini
+   [include ./mellow_buffer_user_settings.cfg]  # Your editable copy
+   [include ./Fly3D_Buffer/mellow_buffer_klipper.cfg]
+   [include ./Fly3D_Buffer/mellow_buffer_macros.cfg]
+   ```
 
-Edit `_BUFFER_STANDALONE_VARS` in `mellow_buffer_macros.cfg`:
+#### Available Variables
+
+Edit `mellow_buffer_user_settings.cfg` to customize:
 ```ini
 variable_park_x: 325.0               # X parking position
 variable_park_y: 348.0               # Y parking position
-variable_park_min_z: 100.0           # Minimum Z height
-variable_unload_length: 125.0        # Unload length (mm)
+variable_park_min_z: 10.0            # Minimum Z height
 variable_unload_purge_length: 25.0   # Purge length (mm)
 variable_unload_temp: 250            # Unload temperature (°C)
 variable_unload_speed: 7.0           # Unload speed (mm/s)
+variable_hotend_path_length: 100.0   # Distance from nozzle to extruder (mm)
+variable_buffer_pulse_interval: 5.0  # Buffer pulse interval (mm)
+variable_buffer_pulse_duration: 0.3  # Buffer pulse duration (seconds)
+# ... and more
 ```
+
+### Customization
 
 #### Adjust Buffer Retraction Parameters
 
@@ -178,8 +205,8 @@ Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5
 - **Fix**: Check sensor wiring and pin assignment in `mellow_buffer_klipper.cfg`
 
 #### Filament not unloading completely
-- **Cause**: Unload length too short
-- **Fix**: Increase `variable_unload_length` in `_BUFFER_STANDALONE_VARS` or use `UNLOAD_LENGTH` parameter
+- **Cause**: Unload length too short (auto-calculated from `hotend_path_length`)
+- **Fix**: Increase `variable_hotend_path_length` in `mellow_buffer_user_settings.cfg` or use `UNLOAD_LENGTH` parameter
 
 ### Requirements
 
