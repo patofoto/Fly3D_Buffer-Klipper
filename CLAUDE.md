@@ -125,11 +125,44 @@ The buffer firmware uses `VACTUAL` register: `SPEED * 64 * 200 / 60 / 0.715 ≈ 
 
 ## Demon Klipper Essentials Integration Notes
 
-The macros are designed to be compatible with or replaceable by the load/unload macros from [3DPrintDemon/Demon_Klipper_Essentials_Unified](https://github.com/3DPrintDemon/Demon_Klipper_Essentials_Unified). Key integration points:
+Integration uses Demon's `demon_custom_expansion.cfg` hooks — a user-owned file that Demon's update manager never overwrites. Our macros plug into four hooks around Demon's native load/unload sequences. See `demon_buffer_integration.cfg` in this repo for the exact code to paste.
 
-- `BUFFER_UNLOAD_FILAMENT` and `BUFFER_LOAD_FILAMENT` can be called as drop-in replacements or hooks
-- Demon macros typically call `UNLOAD_FILAMENT` and `LOAD_FILAMENT` — our macros may need to intercept or wrap these
-- Nozzle cleaning is configurable via `variable_nozzle_clean_macro` to chain with Demon's `CLEAN_NOZZLE`
+### Hook mapping
+
+| Demon hook | Buffer action | Macro called |
+|---|---|---|
+| `_CUSTOM_PRE_LOAD` | Check filament is at extruder before Demon engages | `Buffer_Assert_Filament_Detected` |
+| `_CUSTOM_POST_UNLOAD` | Retract filament tail out of buffer after Demon clears hotend | `Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5` |
+| `_CUSTOM_PRE_LOAD_CLEAN` | Same as PRE_LOAD (applies to LOAD_CLEAN) | `Buffer_Assert_Filament_Detected` |
+| `_CUSTOM_POST_UNLOAD_CLEAN` | Same as POST_UNLOAD (applies to UNLOAD_CLEAN) | `Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5` |
+
+### End-to-end flows
+
+**LOAD_FILAMENT:**
+1. User inserts filament → buffer firmware auto-feeds via HALL sensor → filament arrives at extruder
+2. User calls Demon's `LOAD_FILAMENT`
+3. `_CUSTOM_PRE_LOAD` → `Buffer_Assert_Filament_Detected` → aborts with clear message if sensor not triggered yet
+4. Demon heats hotend, engages extruder, purges
+
+**UNLOAD_FILAMENT:**
+1. User calls Demon's `UNLOAD_FILAMENT`
+2. Demon heats hotend, retracts ~32mm net — enough to clear the extruder grip
+3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer motor runs until sensor clears (60s max)
+
+### Enable flags required in `_CUSTOM_EXPANSION_ACTIVE_LIST`
+```ini
+variable_ceal_master_enable: True   # master switch
+variable_pre_load:          True
+variable_post_unload:       True
+variable_pre_load_clean:    True
+variable_post_unload_clean: True
+```
+
+### Standalone alternative
+`BUFFER_UNLOAD_FILAMENT` and `BUFFER_LOAD_FILAMENT` remain as self-contained alternatives for users without Demon (handles homing, parking, heating, and buffer coordination all in one macro).
+
+### M600 (future)
+Demon's `FIL_CHANGE_PARK` handles mid-print parking. Automatic M600 chaining (park → auto-unload → wait → auto-load) is planned after load/unload hooks are validated on the printer.
 
 ---
 
