@@ -4,6 +4,13 @@ This document contains technical information about motor speed control for the F
 
 ## Buffer Motor Speed Control
 
+### Changing the speed (no rebuild needed)
+The firmware reads `SPEED` from EEPROM at boot and accepts a new value over its USB serial port (115200 baud):
+`speed` shows it, `speed 400` sets and saves it (values outside 0–1000 fall back to 260 at boot).
+Measured filament speed is about 0.0885mm/s per RPM: ~23mm/s at 260, ~35mm/s at 400. The printer this repo
+was built on runs 400 RPM. When changing it, keep `variable_unload_assist_speed` at about 80% of the
+filament speed (28 at 400 RPM) so the unload's extruder assist never pushes filament into the tube.
+
 ### Overview
 The buffer firmware controls motor speed through a chain of calculations that convert RPM to TMC2209 driver register values.
 

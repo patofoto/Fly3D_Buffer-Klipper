@@ -38,7 +38,8 @@ The live printer is accessible via SSH for reading configs and installed macros:
 | Extruder | Stealthburner + Galileo 2 (gear ratio 9:1, rotation_distance 48.02976) |
 | hotend_path_length | 100mm (Revo Voron nozzle tip → Galileo 2 gear center) |
 | Buffer→Extruder PTFE | ~1345mm (buffer motor exit → extruder entrance) |
-| Buffer linear speed | ~23mm/s (measured: full retraction after a Demon unload takes ~57s) |
+| Buffer firmware on the printer | `v1.1-voron.1` from the `voron` branch of patofoto/Buffer (keeps the sensor output live while a signal is held); flashed 2026-09-30, `info` reports the version |
+| Buffer motor speed | **400 RPM** (set over USB `speed 400`, saved on the buffer; stock 260). Filament speed ≈ 0.0885mm/s per RPM: ~23mm/s at 260 (measured), ~35mm/s at 400 |
 | Buffer firmware feed timeout | 120000ms, set over USB serial (`timeout 120000`; default 60000 is about the first-feed time through this tube). Buffer USB: 115200 baud, commands `info`, `rt`, `timeout N` ended by `\n` |
 
 ---
@@ -127,13 +128,13 @@ variable_unload_speed: 7.0           # mm/s (extruder)
 variable_hotend_path_length: 100.0   # Nozzle tip to extruder distance (Stealthburner/Galileo 2)
 variable_buffer_startup_delay: 0.5   # Seconds before starting buffer retraction
 variable_buffer_pulse_interval: 5.0  # mm of extruder retraction between buffer pulses
-variable_buffer_pulse_duration: 0.3  # Seconds buffer runs per pulse
+variable_buffer_pulse_duration: 0.3  # Seconds buffer runs per pulse (~0.2 at 400 RPM; standalone unload only)
 variable_filament_tail_extra_extrude: 10.0  # Extra mm for stringing handling
 variable_nozzle_clean_macro: "CLEAN_NOZZLE"  # Any macro name (params allowed); skipped with a warning if it doesn't exist
 variable_cooldown: "Yes"
 variable_cooldown_temp: 150
 variable_unload_assist_length: 90.0  # Printer copy: 90 (tracked default 0 = off). Extruder retraction while the buffer starts pulling
-variable_unload_assist_speed: 18.0   # Below the buffer's ~23mm/s so the filament is pulled, never pushed
+variable_unload_assist_speed: 18.0   # Printer copy: 28. ~80% of the buffer's filament speed (18 at stock 260 RPM, 28 at 400 RPM)
 ```
 
 New variables must be read with `|default(...)` — users copy this file outside the tracked folder, so their copy can be older than the macros (a missing variable silently renders as 0 otherwise).
@@ -144,11 +145,11 @@ New variables must be read with `|default(...)` — users copy this file outside
 
 | Motor | Speed |
 |---|---|
-| Buffer motor | 260 RPM (firmware default) |
+| Buffer motor | 400 RPM on this printer (firmware default 260; `speed N` over USB) |
 | Extruder motor | ~79 RPM at 7.0 mm/s (gear ratio 9:1) |
-| Buffer:Extruder ratio | ~3.3:1 (buffer is faster) |
+| Buffer filament speed | ~35mm/s at 400 RPM (~23mm/s at 260) |
 
-The buffer firmware uses `VACTUAL` register: `SPEED * 64 * 200 / 60 / 0.715 ≈ 77576` at 260 RPM.
+The buffer firmware uses `VACTUAL` register: `SPEED * 64 * 200 / 60 / 0.715` (≈ 77576 at 260 RPM, ≈ 119348 at 400).
 
 ---
 
@@ -191,7 +192,7 @@ This directory is never touched by Demon's Moonraker update manager. **Filenames
 **UNLOAD_FILAMENT:**
 1. User calls Demon's `UNLOAD_FILAMENT`
 2. Demon heats, purges, tip-shapes (net ~32mm back), then retracts `unload_length` (20mm on this printer) — net ~52mm: out of the melt zone, still gripped by the gears. The buffer does **not** follow the extruder when it pushes filament back, so a long extruder-only retraction bunches filament in the tube and leaves the end in the gears (the old 125mm setting made it snap free when the buffer pulled).
-3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer starts pulling while the extruder retracts `unload_assist_length` (90mm at 18mm/s, a bit slower than the buffer's ~23mm/s), then the buffer retracts alone in segments until the inlet switch clears (~60s through the 1345mm PTFE, 90s max)
+3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer starts pulling while the extruder retracts `unload_assist_length` (90mm at 28mm/s, ~80% of the buffer's ~35mm/s at 400 RPM), then the buffer retracts alone in segments until the inlet switch clears (~40s through the 1345mm PTFE at 400 RPM, 90s max)
 4. After a **runout** the sensor is already clear when the hook fires (the leftover piece sits just past the inlet switch). With the assist enabled, the hook still releases the extruder and pulls; the piece slides back through the switch (sensor reads filament again) and retraction stops when it clears. If nothing reappears within 20s of retraction it stops and asks for a manual check.
 
 **M600** is Demon's `_FIL_CHANGE_PARK`: it only parks (via `PAUSE`); the user runs `UNLOAD_FILAMENT` / `LOAD_FILAMENT` while paused, which go through the same `_FIL_UNLOAD` / `_FIL_LOAD` and hooks. Demon skips auto-cool while paused.

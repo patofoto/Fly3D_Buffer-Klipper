@@ -23,7 +23,7 @@ These points drive how the macros are written.
 - **The filament sensor is the buffer's inlet switch.** "Detected" means filament has been inserted into the buffer, not that it has reached the extruder. There is no sensor at the toolhead.
 - **The sensor output freezes while Retract is held.** The firmware waits in a loop until the signal is released and doesn't update the sensor meanwhile. So retraction runs in segments, with a 0.25s release between them so the sensor can update.
 - **The buffer follows the extruder in one direction only.** It feeds when the extruder pulls filament. It does *not* retract when the extruder pushes filament back into the tube, so a long extruder-only retraction bunches filament up in the tube and leaves the end in the gears. Unloads therefore have the extruder release the filament *while* the buffer pulls.
-- **The buffer moves filament at about 23mm/s**, so a full retraction through 1.35m of PTFE takes about a minute.
+- **The buffer moves filament at about 23mm/s at its stock 260 RPM** (roughly 0.09mm/s per RPM), so a full retraction through 1.35m of PTFE takes about a minute. The speed can be raised over USB (see [Buffer speed](#buffer-speed)); the printer this was developed on runs 400 RPM, about 35mm/s.
 - **The firmware stops feeding after 60s of continuous feeding by default.** It then stops following the extruder until it's reset. With a long tube the first feed can take about that long, so raise the limit (see [Buffer firmware timeout](#buffer-firmware-timeout)).
 
 ## Files
@@ -98,6 +98,17 @@ timeout 120000    # 120s, saved on the buffer
 rt                # read the timeout back
 ```
 
+### Buffer speed
+
+The buffer's motor speed is set in RPM over the same USB serial port, and is saved on the buffer:
+
+```
+speed             # show the current speed (stock 260)
+speed 400         # about 35mm/s instead of 23mm/s
+```
+
+It applies to feeding, retraction and following the extruder during prints. Raise it in steps and listen at the end of a full feed and the start of a full retraction, when the whole tube of filament moves; clicking means too fast. If you change it, set `unload_assist_speed` to about 80% of the new filament speed (28 for 400 RPM) and `buffer_pulse_duration` to about 0.2 for the standalone unload.
+
 ## Usage with Demon Klipper Essentials Unified
 
 Demon runs heating, purging, tip shaping and parking. This repo adds the buffer through four hooks in Demon's user file `Demon_User_Files/demon_custom_expansion_v*.cfg`. `demon_buffer_integration.cfg` has the exact lines. In short:
@@ -117,7 +128,7 @@ Recommended settings for a Stealthburner/Galileo 2 with a Revo (100mm from nozzl
 | Demon user settings | `load_purge_length: 70` | The rest of the path plus about 50mm of purge, at 7mm/s |
 | Demon user settings | `unload_length: 20` | Demon only pulls the filament out of the hot zone; the rest happens with both motors |
 | Demon user settings | `max_extrude_speed: 7` | A purge speed the hotend can melt. Demon warns about values below 15, which is harmless. |
-| Your buffer settings | `unload_assist_length: 90`, `unload_assist_speed: 18` | The extruder releases the filament while the buffer pulls |
+| Your buffer settings | `unload_assist_length: 90`, `unload_assist_speed: 18` (28 with the buffer at 400 RPM) | The extruder releases the filament while the buffer pulls |
 
 **Loading:** insert filament into the buffer and wait for it to feed to the extruder gears and stop. Then run `LOAD_FILAMENT`.
 
@@ -163,10 +174,10 @@ In your copy of `mellow_buffer_user_settings.cfg`. If you add a variable to an o
 | `load_purge_length`, `unload_purge_length` | 50, 25 | Purge lengths (mm) |
 | `load_retract_length` | 10 | Anti-ooze retraction after the load purge (mm) |
 | `hotend_path_length` | 100 | Nozzle tip to extruder gears (mm) |
-| `buffer_startup_delay`, `buffer_pulse_interval`, `buffer_pulse_duration` | 0.5, 5.0, 0.3 | Buffer pulsing during the standalone unload |
+| `buffer_startup_delay`, `buffer_pulse_interval`, `buffer_pulse_duration` | 0.5, 5.0, 0.3 | Buffer pulsing during the standalone unload (pulse duration ~0.2 at 400 RPM) |
 | `filament_tail_extra_extrude` | 10 | Extra retraction at the end of the standalone unload (mm) |
 | `unload_assist_length` | 0 (off) | Extruder retraction while the buffer starts pulling (Demon unload). 90 is suggested with Demon `unload_length: 20`. |
-| `unload_assist_speed` | 18 | Speed of that retraction. Keep it below the buffer's ~23mm/s. |
+| `unload_assist_speed` | 18 | Speed of that retraction: about 80% of the buffer's filament speed (18 at the stock 260 RPM, 28 at 400 RPM) |
 | `nozzle_clean_macro` | `CLEAN_NOZZLE` | Any macro, parameters allowed; empty to disable. Skipped with a warning if it doesn't exist. |
 | `cooldown`, `cooldown_temp` | Yes, 150 | Cooldown after the standalone macros |
 
