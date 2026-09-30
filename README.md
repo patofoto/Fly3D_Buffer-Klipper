@@ -1,55 +1,50 @@
-# Klipper Configuration Files for FLY-LLL PLUS Buffer
+# FLY-LLL PLUS Buffer — Klipper Macros
 
-This repository contains Klipper configuration files for integrating the FLY-LLL PLUS Buffer with your 3D printer.
+Klipper configuration and macros for the Mellow/Fly3D **FLY-LLL PLUS** filament buffer:
 
-## Prerequisites
+- pin and filament-sensor setup for the buffer's control signals
+- standalone `BUFFER_LOAD_FILAMENT` / `BUFFER_UNLOAD_FILAMENT` macros
+- hooks for [Demon Klipper Essentials Unified](https://github.com/3DPrintDemon/Demon_Klipper_Essentials_Unified), so Demon's own `LOAD_FILAMENT` / `UNLOAD_FILAMENT` work with the buffer
 
-**⚠️ Firmware Required:** This Klipper configuration requires the FLY-LLL PLUS Buffer to be flashed with firmware v1.1.x or later.
+Developed and tested on a Voron 2.4 350 (Stealthburner, Galileo 2, Revo Voron) with about 1.35m of PTFE between the buffer and the toolhead.
 
-- **Firmware Repository:** [Buffer Firmware](https://github.com/patofoto/Buffer)
-- **Firmware Installation:** See the [firmware repository README](https://github.com/patofoto/Buffer) for firmware compilation and flashing instructions
+## Requirements
+
+- FLY-LLL PLUS flashed with firmware **v1.1.x or later**: [patofoto/Buffer](https://github.com/patofoto/Buffer) (fork of [Fly3DTeam/Buffer](https://github.com/Fly3DTeam/Buffer))
+- A current Klipper. The sensor config uses `debounce_delay`, which older versions don't support.
+- Five free MCU pins wired to the buffer board (see [Wiring](#wiring))
+- Optional: Demon Klipper Essentials Unified
+
+## How the buffer behaves
+
+These points drive how the macros are written.
+
+- **Two control signals act like the buffer's buttons.** *Feed* (forward) and *Retract* (reverse) are active-low: `VALUE=0` means pressed and the motor runs; `VALUE=1` means released and the motor is idle.
+- **The filament sensor is the buffer's inlet switch.** "Detected" means filament has been inserted into the buffer, not that it has reached the extruder. There is no sensor at the toolhead.
+- **The sensor output freezes while Retract is held.** The firmware waits in a loop until the signal is released and doesn't update the sensor meanwhile. So retraction runs in segments, with a 0.25s release between them so the sensor can update.
+- **The buffer follows the extruder in one direction only.** It feeds when the extruder pulls filament. It does *not* retract when the extruder pushes filament back into the tube, so a long extruder-only retraction bunches filament up in the tube and leaves the end in the gears. Unloads therefore have the extruder release the filament *while* the buffer pulls.
+- **The buffer moves filament at about 23mm/s**, so a full retraction through 1.35m of PTFE takes about a minute.
+- **The firmware stops feeding after 60s of continuous feeding by default.** It then stops following the extruder until it's reset. With a long tube the first feed can take about that long, so raise the limit (see [Buffer firmware timeout](#buffer-firmware-timeout)).
 
 ## Files
 
-- **`mellow_buffer_klipper.cfg`** - Basic buffer configuration with pin definitions, sensor setup, and manual feed/retract macros
-- **`mellow_buffer_macros.cfg`** - Advanced standalone integration with automatic filament unload and buffer retraction
-- **`mellow_buffer_user_settings.cfg`** - User-configurable variables (park positions, temperatures, speeds, etc.)
+| File | Purpose |
+|---|---|
+| `mellow_buffer_klipper.cfg` | Pins, filament sensor, manual `Buffer_Feeding` / `Buffer_Retraction` / `BUFFER_STOP` |
+| `mellow_buffer_macros.cfg` | Load/unload automation and the macros called from Demon's hooks |
+| `mellow_buffer_user_settings.cfg` | Template for your settings. Copy it out of the repo folder. |
+| `demon_buffer_integration.cfg` | Reference snippet for Demon's hook file. **Never include it.** |
+| `MOTOR_SPEED_REFERENCE.md` | Buffer and extruder motor speed calculations |
 
 ## Installation
 
-### Quick Start
-
-1. Copy the configuration files to your Klipper `printer_data/config/` folder:
-   ```bash
-   cp mellow_buffer_klipper.cfg ~/printer_data/config/
-   cp mellow_buffer_macros.cfg ~/printer_data/config/
-   cp mellow_buffer_user_settings.cfg ~/printer_data/config/
-   ```
-
-2. Add includes to your `printer.cfg`:
-   ```ini
-   [include ./mellow_buffer_user_settings.cfg]
-   [include ./mellow_buffer_klipper.cfg]
-   [include ./mellow_buffer_macros.cfg]
-   ```
-
-3. **Important**: Update the pin assignments in `mellow_buffer_klipper.cfg` to match your printer's GPIO pins. The current pins (PA8, PC9, PF4, PF1, PF0) are for a Voron 2.4 with a specific MCU configuration.
-
-4. Restart Klipper to load the new configuration.
-
-### Installation via Moonraker Update Manager (Recommended)
-
-For automatic updates, you can use Moonraker Update Manager to track the `standalone-buffer` branch and receive updates automatically through your Mainsail/Fluidd interface.
-
-#### Initial Setup
-
-1. **Clone this repository to your config folder:**
+1. **Clone the repository** into your config folder:
    ```bash
    cd ~/printer_data/config
    git clone https://github.com/patofoto/Fly3D_Buffer-Klipper.git Fly3D_Buffer
    ```
 
-2. **Add the update manager entry to your `moonraker.conf`:**
+2. **Add it to Moonraker's update manager** in `moonraker.conf`, then restart Moonraker:
    ```ini
    [update_manager Fly3D_Buffer]
    type: git_repo
@@ -60,164 +55,137 @@ For automatic updates, you can use Moonraker Update Manager to track the `standa
    managed_services: klipper
    ```
 
-3. **Copy the user settings file to your config directory (outside tracked folder):**
-   ```bash
-   cp ~/printer_data/config/Fly3D_Buffer/mellow_buffer_user_settings.cfg ~/printer_data/config/
-   ```
-   This allows you to edit variables without Moonraker making them read-only.
-
-4. **Update your `printer.cfg` includes:**
-   ```ini
-   [include ./mellow_buffer_user_settings.cfg]  # Your editable copy (outside tracked folder)
-   [include ./Fly3D_Buffer/mellow_buffer_klipper.cfg]
-   [include ./Fly3D_Buffer/mellow_buffer_macros.cfg]
-   ```
-
-5. **Restart Moonraker:**
-   ```bash
-   sudo systemctl restart moonraker
-   ```
-
-#### Using Moonraker Update Manager
-
-Once configured, you can manage updates through your Mainsail or Fluidd interface:
-
-- **Check for updates**: Navigate to the "Updates" section in Mainsail/Fluidd
-- **View available updates**: You'll see "Fly3D_Buffer" listed if updates are available
-- **Apply updates**: Click "Update" to pull the latest changes from the `standalone-buffer` branch
-- **Automatic restart**: Klipper will automatically restart after updates are applied
-
-#### Benefits
-
-- **Automatic updates**: Get notified when new versions are available
-- **Easy management**: Update through the web interface without SSH access
-- **Version tracking**: Moonraker tracks the repository and branch automatically
-- **Safe updates**: Klipper restarts automatically after updates
-
-**Note**: If you customize pin assignments or other settings in `mellow_buffer_klipper.cfg`, be aware that updates may overwrite your changes. Consider keeping a backup or using a separate config file for customizations.
-
-### Pin Configuration
-
-Before using these configs, you **must** update the pin assignments in `mellow_buffer_klipper.cfg` to match your printer's GPIO configuration:
-
-- **`_Feed_Button`** (output_pin): Pin that controls buffer forward feeding
-- **`_Retract_Button`** (output_pin): Pin that controls buffer reverse retraction
-- **`filament_sensor`** (filament_switch_sensor): Pin for filament runout detection
-- **Trigger buttons** (gcode_button): Optional pins for manual trigger buttons
-
-**Critical**: Choose pins that default to **HIGH** on boot to prevent unwanted motor movement during Klipper startup. The buffer firmware uses active-low logic (LOW = pressed, HIGH = released).
-
-### Features
-
-#### Basic Configuration (`mellow_buffer_klipper.cfg`)
-- Filament runout detection with pause on runout
-- Manual buffer feeding macro (`Buffer_Feeding`)
-- Manual buffer retraction macro (`Buffer_Retraction`)
-- Pin definitions for buffer control
-
-#### Standalone Integration (`mellow_buffer_macros.cfg`)
-- **`BUFFER_UNLOAD_FILAMENT`** - Complete filament unload macro that:
-  - Auto-homes printer if not homed
-  - Parks toolhead at safe position
-  - Manages hotend temperature
-  - Unloads filament from hotend
-  - Retracts buffer until runout sensor detects no filament
-  - Optional cooldown after unload
-
-- **`Buffer_Retract_Until_Runout`** - Helper macro for buffer retraction with sensor polling
-
-### Usage
-
-#### Basic Manual Control
-```gcode
-Buffer_Feeding      # Feed filament for 10 seconds
-Buffer_Retraction   # Retract filament for 10 seconds
-```
-
-#### Advanced Unload
-```gcode
-BUFFER_UNLOAD_FILAMENT                    # Standard unload
-BUFFER_UNLOAD_FILAMENT TEMP=230          # Unload at 230°C
-BUFFER_UNLOAD_FILAMENT TEMP=230 COOL=Yes # Unload and cool down
-```
-
-### User Settings Configuration
-
-All user-configurable variables are in `mellow_buffer_user_settings.cfg`. This file should be **copied outside the tracked folder** when using Moonraker Update Manager, as Moonraker makes tracked files read-only.
-
-#### Editing Variables with Moonraker
-
-1. **Copy the settings file to your config directory:**
+3. **Copy the settings file out of the repo folder.** Moonraker keeps tracked files read-only, and updates would overwrite them.
    ```bash
    cp ~/printer_data/config/Fly3D_Buffer/mellow_buffer_user_settings.cfg ~/printer_data/config/
    ```
 
-2. **Edit your copy:**
-   ```bash
-   nano ~/printer_data/config/mellow_buffer_user_settings.cfg
-   ```
-
-3. **Update `printer.cfg` to include your copy:**
+4. **Include the files explicitly** in `printer.cfg`:
    ```ini
-   [include ./mellow_buffer_user_settings.cfg]  # Your editable copy
+   [include ./mellow_buffer_user_settings.cfg]            # your editable copy
    [include ./Fly3D_Buffer/mellow_buffer_klipper.cfg]
    [include ./Fly3D_Buffer/mellow_buffer_macros.cfg]
    ```
+   Don't use `[include ./Fly3D_Buffer/*.cfg]`. That also loads the repo's own settings file, which then overrides your copy, and the Demon snippet, which then overrides Demon's hooks.
 
-#### Available Variables
+5. **Set your pins** in `mellow_buffer_klipper.cfg` (see [Wiring](#wiring)). If they differ from the defaults, copy that file out of the repo folder too and include your copy, or updates will overwrite your pins.
 
-Edit `mellow_buffer_user_settings.cfg` to customize:
-```ini
-variable_park_x: 325.0               # X parking position
-variable_park_y: 348.0               # Y parking position
-variable_park_min_z: 10.0            # Minimum Z height
-variable_unload_purge_length: 25.0   # Purge length (mm)
-variable_unload_temp: 250            # Unload temperature (°C)
-variable_unload_speed: 7.0           # Unload speed (mm/s)
-variable_hotend_path_length: 100.0   # Distance from nozzle to extruder (mm)
-variable_buffer_pulse_interval: 5.0  # Buffer pulse interval (mm)
-variable_buffer_pulse_duration: 0.3  # Buffer pulse duration (seconds)
-# ... and more
+6. **Restart Klipper.**
+
+### Wiring
+
+Example for the Voron 2.4 this was built on:
+
+| Signal | Printer pin | Buffer board pin |
+|---|---|---|
+| `_Feed_Button` (output) | PA8 | PB5 (forward signal) |
+| `_Retract_Button` (output) | PC9 | PB6 (reverse signal) |
+| `filament_sensor` (input) | PF4 | PB15 (inlet switch output) |
+| `Trigger Feeding` button (input) | ^!PF1 | PA2 (short press of the buffer's forward key) |
+| `Trigger Retraction` button (input) | ^!PF0 | PA3 (short press of the buffer's reverse key) |
+
+For the two outputs, **pick pins that are HIGH at boot**; a pin that starts LOW runs the motor while Klipper starts. Keep `shutdown_value: 1` on both, so an emergency stop leaves the motor idle.
+
+### Buffer firmware timeout
+
+If your PTFE tube is longer than about 1.2m, raise the firmware's feed timeout, or the buffer may give up before new filament reaches the extruder. It then stops following the extruder until it's reset.
+
+Connect the buffer's USB port to a computer, open its serial port at 115200 baud, and send each command on its own line:
+
+```
+info              # show settings, including timeout (default 60000 ms)
+timeout 120000    # 120s, saved on the buffer
+rt                # read the timeout back
 ```
 
-### Customization
+## Usage with Demon Klipper Essentials Unified
 
-#### Adjust Buffer Retraction Parameters
+Demon runs heating, purging, tip shaping and parking. This repo adds the buffer through four hooks in Demon's user file `Demon_User_Files/demon_custom_expansion_v*.cfg`. `demon_buffer_integration.cfg` has the exact lines. In short:
 
-Modify the `Buffer_Retract_Until_Runout` call in `BUFFER_UNLOAD_FILAMENT`:
-```ini
-Buffer_Retract_Until_Runout TIMEOUT=90 POLL=2.0
+| Demon hook | Body |
+|---|---|
+| `_CUSTOM_PRE_LOAD`, `_CUSTOM_PRE_LOAD_CLEAN` | `Buffer_Assert_Filament_Detected` |
+| `_CUSTOM_POST_UNLOAD`, `_CUSTOM_POST_UNLOAD_CLEAN` | `Buffer_Retract_Until_Runout TIMEOUT=90 POLL=2.0` |
+
+Set the matching flags (`pre_load`, `post_unload`, `pre_load_clean`, `post_unload_clean`) to `True`. Demon updates can reset that file, so check the hooks after updating Demon.
+
+Recommended settings for a Stealthburner/Galileo 2 with a Revo (100mm from nozzle tip to gears):
+
+| File | Setting | Why |
+|---|---|---|
+| Demon user settings | `load_length: 80` | The fast load move stops before the melt zone |
+| Demon user settings | `load_purge_length: 70` | The rest of the path plus about 50mm of purge, at 7mm/s |
+| Demon user settings | `unload_length: 20` | Demon only pulls the filament out of the hot zone; the rest happens with both motors |
+| Demon user settings | `max_extrude_speed: 7` | A purge speed the hotend can melt. Demon warns about values below 15, which is harmless. |
+| Your buffer settings | `unload_assist_length: 90`, `unload_assist_speed: 18` | The extruder releases the filament while the buffer pulls |
+
+**Loading:** insert filament into the buffer and wait for it to feed to the extruder gears and stop. Then run `LOAD_FILAMENT`.
+
+**Unloading:** run `UNLOAD_FILAMENT`.
+1. Demon purges, shapes the tip and pulls back a little.
+2. The extruder and buffer then pull together for a few seconds.
+3. The buffer continues alone until the filament leaves its inlet. You'll see `✓ Buffer: Filament ejected`.
+
+**M600:** Demon parks and waits. Run `UNLOAD_FILAMENT`, swap the filament, then `LOAD_FILAMENT` and `RESUME`.
+
+**After a runout:** the print pauses. `UNLOAD_FILAMENT` releases the extruder and pulls the leftover piece back out through the buffer.
+
+## Usage without Demon
+
+```gcode
+BUFFER_LOAD_FILAMENT                      # home, park, heat, engage, advance to the nozzle, purge
+BUFFER_LOAD_FILAMENT TEMP=230 SPEED=5
+BUFFER_UNLOAD_FILAMENT                    # home, park, heat, purge, phased retraction, buffer retraction
+BUFFER_UNLOAD_FILAMENT TEMP=230 COOL=No
 ```
 
-- `TIMEOUT`: Maximum retraction time in seconds (safety limit, default: 90)
-- `POLL`: Seconds of retraction between sensor checks (default: 2.0, minimum 1.0)
+## Commands
 
-**Note**: Retraction continues until the runout sensor detects no filament, or the timeout is reached (safety limit).
+| Command | Description |
+|---|---|
+| `BUFFER_LOAD_FILAMENT` | Standalone load. Params: `TEMP`, `SPEED`, `ENGAGE_LENGTH`, `PURGE_LENGTH`, `RETRACT_LENGTH`, `COOL`, `COOL_TEMP` |
+| `BUFFER_UNLOAD_FILAMENT` | Standalone unload. Params: `TEMP`, `SPEED`, `UNLOAD_LENGTH`, `COOL`, `COOL_TEMP` |
+| `Buffer_Retract_Until_Runout` | Retracts in the background until the inlet switch clears. Params: `TIMEOUT` (motor-on seconds, 90), `POLL` (segment seconds, 2.0, minimum 1.0), `ASSIST` (mm), `ASSIST_SPEED` (mm/s) |
+| `Buffer_Assert_Filament_Detected` | Errors if the buffer has no filament or a retraction is still running |
+| `BUFFER_STOP` | Stops the motor and cancels a running retraction |
+| `Buffer_Feeding` / `Buffer_Retraction` | Run the buffer forward or back for 10s |
 
-### Troubleshooting
+## Settings
 
-#### Motor moves during Klipper startup
-- **Cause**: Pin defaults to LOW on boot
-- **Fix**: Change to a pin that defaults HIGH (check your MCU datasheet)
+In your copy of `mellow_buffer_user_settings.cfg`. If you add a variable to an older copy, put it with the other `variable_` lines, above `gcode:`.
 
-#### Buffer retraction doesn't stop
-- **Cause**: Runout sensor not detecting filament absence
-- **Fix**: Check sensor wiring and pin assignment in `mellow_buffer_klipper.cfg`
+| Variable | Default | Meaning |
+|---|---|---|
+| `park_x`, `park_y`, `park_min_z` | 325, 348, 10 | Park position for the standalone macros |
+| `load_temp`, `unload_temp` | 250 | Default temperatures (°C) |
+| `load_speed`, `unload_speed` | 7.0 | Extruder speed for standalone load/unload (mm/s) |
+| `engage_length` | 20 | First load move; the rest of `hotend_path_length` follows before the purge |
+| `load_purge_length`, `unload_purge_length` | 50, 25 | Purge lengths (mm) |
+| `load_retract_length` | 10 | Anti-ooze retraction after the load purge (mm) |
+| `hotend_path_length` | 100 | Nozzle tip to extruder gears (mm) |
+| `buffer_startup_delay`, `buffer_pulse_interval`, `buffer_pulse_duration` | 0.5, 5.0, 0.3 | Buffer pulsing during the standalone unload |
+| `filament_tail_extra_extrude` | 10 | Extra retraction at the end of the standalone unload (mm) |
+| `unload_assist_length` | 0 (off) | Extruder retraction while the buffer starts pulling (Demon unload). 90 is suggested with Demon `unload_length: 20`. |
+| `unload_assist_speed` | 18 | Speed of that retraction. Keep it below the buffer's ~23mm/s. |
+| `nozzle_clean_macro` | `CLEAN_NOZZLE` | Any macro, parameters allowed; empty to disable. Skipped with a warning if it doesn't exist. |
+| `cooldown`, `cooldown_temp` | Yes, 150 | Cooldown after the standalone macros |
 
-#### Filament not unloading completely
-- **Cause**: Unload length too short (auto-calculated from `hotend_path_length`)
-- **Fix**: Increase `variable_hotend_path_length` in `mellow_buffer_user_settings.cfg` or use `UNLOAD_LENGTH` parameter
+## Troubleshooting
 
-### Requirements
+| Symptom | Cause and fix |
+|---|---|
+| Buffer motor runs while Klipper starts | An output pin is LOW at boot. Use pins that start HIGH, with `shutdown_value: 1`. |
+| "No filament in buffer" | Filament isn't past the buffer's inlet switch. Insert it further and let the buffer feed it. |
+| "Still retracting from the last unload" | Wait for `Filament ejected`, or run `BUFFER_STOP`. |
+| The extruder can't grab the filament | The tip hasn't reached the gears, or it's bent. Recut it at an angle and let the buffer feed it until it stops at the gears. |
+| Extruder skips during a load or unload purge | The purge is faster than the hotend can melt. Use the Demon settings above (a short fast move, then a 7mm/s purge). |
+| Unload "snaps", or the filament end stays in the extruder | The extruder pushed filament back while the buffer was idle. Use Demon `unload_length: 20` with `unload_assist_length: 90`. |
+| Unload ends with "Timeout reached" but the filament came out | Your tube needs more time. Raise `TIMEOUT` in the hook line. |
+| The buffer stops feeding or following the extruder | The firmware's feed timeout fired. Short-press the buffer's forward key or run `Buffer_Feeding` to reset it, and raise the timeout. |
+| "No filament came back through the buffer inlet" (after a runout) | The leftover piece didn't reach the switch within 20s. Pull it out by hand. |
 
-- Klipper firmware
-- FLY-LLL PLUS Buffer with firmware v1.1.x or later
-- Properly configured GPIO pins on your printer's MCU
-- Filament runout sensor connected to buffer board
+## Support
 
-### Support
-
-- **Firmware Issues:** See the [Buffer Firmware repository](https://github.com/patofoto/Buffer) for firmware-related problems
-- **Klipper Issues:** Consult the [Klipper documentation](https://www.klipper3d.org/)
-- **This Repository:** For issues with these Klipper configuration files, open an issue in this repository
-
+- Firmware: [patofoto/Buffer](https://github.com/patofoto/Buffer)
+- Klipper: [klipper3d.org](https://www.klipper3d.org/)
+- This repository: open an issue

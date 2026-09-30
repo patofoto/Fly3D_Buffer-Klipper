@@ -38,6 +38,8 @@ The live printer is accessible via SSH for reading configs and installed macros:
 | Extruder | Stealthburner + Galileo 2 (gear ratio 9:1, rotation_distance 48.02976) |
 | hotend_path_length | 100mm (Revo Voron nozzle tip → Galileo 2 gear center) |
 | Buffer→Extruder PTFE | ~1345mm (buffer motor exit → extruder entrance) |
+| Buffer linear speed | ~23mm/s (measured: full retraction after a Demon unload takes ~57s) |
+| Buffer firmware feed timeout | 120000ms, set over USB serial (`timeout 120000`; default 60000 is about the first-feed time through this tube). Buffer USB: 115200 baud, commands `info`, `rt`, `timeout N` ended by `\n` |
 
 ---
 
@@ -48,8 +50,10 @@ The live printer is accessible via SSH for reading configs and installed macros:
 | `mellow_buffer_klipper.cfg` | Pin definitions, filament sensor, manual feed/retract macros |
 | `mellow_buffer_macros.cfg` | Full load/unload automation macros |
 | `mellow_buffer_user_settings.cfg` | All user-configurable variables (should be copied outside tracked folder for Moonraker) |
+| `demon_buffer_integration.cfg` | Reference snippet (never included): Demon hook bodies, enable flags and recommended Demon settings |
 | `MOTOR_SPEED_REFERENCE.md` | Technical reference for buffer/extruder motor speed calculations |
-| `test_extruder_unload.cfg` | Test macros for extruder unload development |
+
+Include the two macro files **explicitly** in printer.cfg (after the user's settings copy). A `Fly3D_Buffer/*.cfg` wildcard also loads the tracked settings file (overriding the user's copy) and the Demon snippet (overriding Demon's hooks).
 
 ---
 
@@ -84,10 +88,13 @@ The FLY-LLL PLUS buffer firmware uses **active-low button logic**:
 |---|---|---|
 | `BUFFER_UNLOAD_FILAMENT` | macros.cfg | Full unload: home → park → heat → purge → retract hotend (phased) → buffer retract until runout |
 | `BUFFER_LOAD_FILAMENT` | macros.cfg | Full load: home → park → heat → engage extruder → purge → retract |
-| `Buffer_Retract_Until_Runout` | macros.cfg | Helper: runs buffer retraction, polls runout sensor, stops when filament gone |
+| `Buffer_Retract_Until_Runout` | macros.cfg | Async buffer retraction in segments until the inlet switch clears; optional extruder assist; runout-aware (Demon post-unload hook) |
+| `Buffer_Assert_Filament_Detected` | macros.cfg | Errors if no filament in the buffer or a retraction is still running (Demon pre-load hook) |
+| `_BUFFER_HOME_IF_NEEDED` / `_BUFFER_PARK` / `_BUFFER_NOZZLE_CLEAN` / `_BUFFER_COOLDOWN` | macros.cfg | Shared helpers for the standalone load/unload |
+| `_BUFFER_RETRACT_FINISH` | macros.cfg | Ends a retraction; re-enables the sensor only if the retraction disabled it |
 | `Buffer_Feeding` | klipper.cfg | Manual: feeds filament 10 seconds |
-| `Buffer_Retraction` | klipper.cfg | Manual: retracts filament 10 seconds |
-| `BUFFER_STOP` | klipper.cfg | Emergency: releases both pins immediately |
+| `Buffer_Retraction` | klipper.cfg | Manual: retracts filament 10 seconds (firmware then stops auto-feeding until a forward press or the filament leaves the inlet) |
+| `BUFFER_STOP` | klipper.cfg | Emergency: releases both pins, cancels a running retraction |
 | `_BUFFER_USER_SETTINGS` | user_settings.cfg | Variable container for all configurable values |
 
 ### Unload Phases
@@ -110,7 +117,7 @@ The FLY-LLL PLUS buffer firmware uses **active-low button logic**:
 ## Key User Variables (`mellow_buffer_user_settings.cfg`)
 
 ```ini
-variable_version: "1.1.13"
+variable_version: "1.2.0"
 variable_park_x: 325.0               # Parking position for Voron 2.4 350
 variable_park_y: 348.0
 variable_park_min_z: 10.0
@@ -122,10 +129,14 @@ variable_buffer_startup_delay: 0.5   # Seconds before starting buffer retraction
 variable_buffer_pulse_interval: 5.0  # mm of extruder retraction between buffer pulses
 variable_buffer_pulse_duration: 0.3  # Seconds buffer runs per pulse
 variable_filament_tail_extra_extrude: 10.0  # Extra mm for stringing handling
-variable_nozzle_clean_macro: "CLEAN_NOZZLE"  # Macro to call after load/unload
+variable_nozzle_clean_macro: "CLEAN_NOZZLE"  # Any macro name (params allowed); skipped with a warning if it doesn't exist
 variable_cooldown: "Yes"
 variable_cooldown_temp: 150
+variable_unload_assist_length: 90.0  # Printer copy: 90 (tracked default 0 = off). Extruder retraction while the buffer starts pulling
+variable_unload_assist_speed: 18.0   # Below the buffer's ~23mm/s so the filament is pulled, never pushed
 ```
+
+New variables must be read with `|default(...)` — users copy this file outside the tracked folder, so their copy can be older than the macros (a missing variable silently renders as 0 otherwise).
 
 ---
 
@@ -197,8 +208,8 @@ variable_post_unload_clean: True
 ### Standalone alternative
 `BUFFER_UNLOAD_FILAMENT` and `BUFFER_LOAD_FILAMENT` remain as self-contained alternatives for users without Demon (handles homing, parking, heating, and buffer coordination all in one macro).
 
-### M600 (future)
-Demon's `FIL_CHANGE_PARK` handles mid-print parking. Automatic M600 chaining (park → auto-unload → wait → auto-load) is planned after load/unload hooks are validated on the printer.
+### M600
+Kept as Demon's manual flow (decided 2026-09-30): `M600` → `_FIL_CHANGE_PARK` only parks via `PAUSE`; the user runs `UNLOAD_FILAMENT`, swaps filament, `LOAD_FILAMENT`, `RESUME`. The paused unload/load use the same `_FIL_UNLOAD` / `_FIL_LOAD` and our hooks. Full automation would need a user confirmation (Mainsail prompt) or fixed wait, because nothing tells Klipper when the new filament has reached the gears.
 
 ---
 
@@ -291,4 +302,4 @@ Use the cheapest model that can handle the task. Escalate only when needed.
 
 ## Current Version
 
-`v1.1.13` — Latest fix: `shutdown_value:1` on both output pins (emergency stop safety)
+`v1.2.0` — Demon integration live and tested end to end on the printer (2026-09-30): segmented retraction that works with the firmware's frozen sensor output, extruder assist for a snap-free unload, runout-aware unload, 90s retraction timeout, `ABORT` replaced by `action_raise_error`, single-pass standalone load, shared helpers.
