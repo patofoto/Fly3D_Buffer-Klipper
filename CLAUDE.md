@@ -101,7 +101,7 @@ The FLY-LLL PLUS buffer firmware uses **active-low button logic**:
 
 1. Preflight checks (settings loaded, filament at sensor, hotend hot enough if mid-print) — evaluated at render time, so a failure raises before anything moves
 2. Auto-home if needed → park → heat
-3. Engage `engage_length`, then advance the rest of `hotend_path_length` to the nozzle — single pass at `load_speed`, no grip test (the HALL output can't detect grip)
+3. Engage `engage_length`, then advance the rest of `hotend_path_length` to the nozzle — single pass at `load_speed`, no grip test (the sensor is the buffer's inlet switch, so it can't detect grip)
 4. Purge → retract to prevent oozing
 5. Optional nozzle clean → optional cooldown
 
@@ -164,7 +164,7 @@ This directory is never touched by Demon's Moonraker update manager. **Filenames
 
 | Demon hook | Buffer action | Macro called |
 |---|---|---|
-| `_CUSTOM_PRE_LOAD` | Check filament is at extruder before Demon engages | `Buffer_Assert_Filament_Detected` |
+| `_CUSTOM_PRE_LOAD` | Check filament is in the buffer (inlet switch) before Demon engages | `Buffer_Assert_Filament_Detected` |
 | `_CUSTOM_POST_UNLOAD` | Buffer retracts filament tail after Demon's unload | `Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5` |
 | `_CUSTOM_PRE_LOAD_CLEAN` | Same as PRE_LOAD (applies to LOAD_CLEAN) | `Buffer_Assert_Filament_Detected` |
 | `_CUSTOM_POST_UNLOAD_CLEAN` | Same as POST_UNLOAD (applies to UNLOAD_CLEAN) | `Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5` |
@@ -172,15 +172,15 @@ This directory is never touched by Demon's Moonraker update manager. **Filenames
 ### End-to-end flows
 
 **LOAD_FILAMENT:**
-1. User inserts filament → buffer firmware auto-feeds via HALL sensor → filament arrives at extruder
+1. User inserts filament → inlet switch triggers → buffer firmware auto-feeds until its slider hits HALL pos2 (filament stopped at the extruder gears) or 60s firmware timeout
 2. User calls Demon's `LOAD_FILAMENT`
-3. `_CUSTOM_PRE_LOAD` → `Buffer_Assert_Filament_Detected` → aborts with clear message if sensor not triggered yet
+3. `_CUSTOM_PRE_LOAD` → `Buffer_Assert_Filament_Detected` → aborts with clear message if no filament in the buffer (it can't tell whether feeding has finished)
 4. Demon heats hotend, engages extruder, purges
 
 **UNLOAD_FILAMENT:**
 1. User calls Demon's `UNLOAD_FILAMENT`
 2. Demon heats, tip-shapes, then retracts `unload_length` (125mm on this printer) — net ~157mm total, clearing the 100mm hotend path. Extruder has no filament grip when hook fires.
-3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer motor runs until sensor clears (60s max)
+3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer retracts in segments until the inlet switch clears (60s of retraction max)
 
 ### Enable flags required in `_CUSTOM_EXPANSION_ACTIVE_LIST`
 ```ini
@@ -233,7 +233,13 @@ It raises while the template renders, so no line of that macro runs — includin
 
 ## Filament Sensor Behavior
 
-The sensor (`filament_switch_sensor filament_sensor`) has `pause_on_runout: true`. Implications:
+The sensor is the buffer's **inlet filament switch** (firmware ENDSTOP_3 on PB7), relayed to the printer on buffer PB15 → PF4. There is no sensor at the extruder: "detected" only means filament is in the buffer.
+
+**PB15 freezes while the retract signal is held.** The firmware's `motor_control()` sits in a `while (BACK_SIGNAL_PIN == LOW)` loop and never refreshes PB15, so holding `_Retract_Button` LOW keeps the sensor at "present" no matter where the filament is. `Buffer_Retract_Until_Runout` releases the pin for 0.25s between retraction segments so the firmware can refresh it. The same applies to `_Feed_Button` (`FRONT_SIGNAL_PIN`).
+
+Other firmware behavior (patofoto/Buffer `lib/buffer/buffer.cpp`): auto-feed stops with an internal error after 60s of continuous forward motion, and releasing the retract signal also sets that error flag, so auto-feed stays off until a forward press or until the filament leaves the inlet switch.
+
+The sensor has `pause_on_runout: true`. Implications:
 - If the sensor triggers **during a print** (e.g., runout), Klipper calls `PAUSE` automatically — this is the desired runout behavior
 - During `BUFFER_UNLOAD_FILAMENT`, the sensor going LOW is the *success* condition (filament ejected) — the macro waits for this in `Buffer_Retract_Until_Runout`
 - During `BUFFER_LOAD_FILAMENT`, the sensor being HIGH is the *precondition* — if it's LOW, no filament is present and the macro aborts
