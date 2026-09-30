@@ -186,11 +186,11 @@ variable_buffer_pulse_duration: 0.3  # Buffer pulse duration (seconds)
 
 Modify the `Buffer_Retract_Until_Runout` call in `BUFFER_UNLOAD_FILAMENT`:
 ```ini
-Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5
+Buffer_Retract_Until_Runout TIMEOUT=90 POLL=2.0
 ```
 
-- `TIMEOUT`: Maximum retraction time in seconds (safety limit, default: 60)
-- `POLL`: Poll interval in seconds (default: 0.5)
+- `TIMEOUT`: Maximum retraction time in seconds (safety limit, default: 90)
+- `POLL`: Seconds of retraction between sensor checks (default: 2.0, minimum 1.0)
 
 **Note**: Retraction continues until the runout sensor detects no filament, or the timeout is reached (safety limit).
 

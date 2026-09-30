@@ -165,9 +165,9 @@ This directory is never touched by Demon's Moonraker update manager. **Filenames
 | Demon hook | Buffer action | Macro called |
 |---|---|---|
 | `_CUSTOM_PRE_LOAD` | Check filament is in the buffer (inlet switch) before Demon engages | `Buffer_Assert_Filament_Detected` |
-| `_CUSTOM_POST_UNLOAD` | Buffer retracts filament tail after Demon's unload | `Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5` |
+| `_CUSTOM_POST_UNLOAD` | Buffer retracts filament tail after Demon's unload | `Buffer_Retract_Until_Runout TIMEOUT=90 POLL=2.0` |
 | `_CUSTOM_PRE_LOAD_CLEAN` | Same as PRE_LOAD (applies to LOAD_CLEAN) | `Buffer_Assert_Filament_Detected` |
-| `_CUSTOM_POST_UNLOAD_CLEAN` | Same as POST_UNLOAD (applies to UNLOAD_CLEAN) | `Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5` |
+| `_CUSTOM_POST_UNLOAD_CLEAN` | Same as POST_UNLOAD (applies to UNLOAD_CLEAN) | `Buffer_Retract_Until_Runout TIMEOUT=90 POLL=2.0` |
 
 ### End-to-end flows
 
@@ -180,7 +180,7 @@ This directory is never touched by Demon's Moonraker update manager. **Filenames
 **UNLOAD_FILAMENT:**
 1. User calls Demon's `UNLOAD_FILAMENT`
 2. Demon heats, tip-shapes, then retracts `unload_length` (125mm on this printer) — net ~157mm total, clearing the 100mm hotend path. Extruder has no filament grip when hook fires.
-3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer retracts in segments until the inlet switch clears (60s of retraction max)
+3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer retracts in segments until the inlet switch clears (~60s through the 1345mm PTFE, 90s max)
 
 ### Enable flags required in `_CUSTOM_EXPANSION_ACTIVE_LIST`
 ```ini
