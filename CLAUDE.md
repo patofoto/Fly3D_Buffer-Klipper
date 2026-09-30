@@ -13,7 +13,7 @@ Macros must be compatible with (or callable from) the load/unload macros in:
 ## Printer SSH Access
 
 The live printer is accessible via SSH for reading configs and installed macros:
-- **Host:** `pato@10.0.10.44`
+- **Host:** `patofoto@10.0.10.44` (SSH key auth)
 - **Config path:** `~/printer_data/config/`
 - **Password:** provide in chat when needed (do not store here — file is tracked by git)
 
@@ -99,9 +99,9 @@ The FLY-LLL PLUS buffer firmware uses **active-low button logic**:
 
 ### Load Flow
 
-1. Auto-home if needed → park → heat
-2. Check filament detected at sensor
-3. Extruder engagement (3 retries) with retract test to confirm grip
+1. Preflight checks (settings loaded, filament at sensor, hotend hot enough if mid-print) — evaluated at render time, so a failure raises before anything moves
+2. Auto-home if needed → park → heat
+3. Engage `engage_length`, then advance the rest of `hotend_path_length` to the nozzle — single pass at `load_speed`, no grip test (the HALL output can't detect grip)
 4. Purge → retract to prevent oozing
 5. Optional nozzle clean → optional cooldown
 
@@ -211,20 +211,20 @@ Klipper renders the **entire Jinja2 template before any GCode executes**. This c
 {% endfor %}
 {# success is still False here #}
 ```
-The `BUFFER_LOAD_FILAMENT` engagement retry loop uses this pattern — it appears to retry but `engagement_success` never actually changes. Workaround: restructure logic to avoid needing a mutable flag, or use a single-pass approach.
+`BUFFER_LOAD_FILAMENT` used to have an engagement retry loop built on this pattern: every attempt ran, and the failure block fired afterwards anyway. It's now a single pass.
 
 ### No `break` in loops
-Jinja2 has no `break` statement. The `Buffer_Retract_Until_Runout` macro works around this with a `{% if not runout_detected %}` guard inside the loop body, but all iterations still execute (with `G4` waits), so the loop always runs to `max_iterations`. It stops the motor early but still waits out the full timeout in practice.
+Klipper's Jinja environment enables no extensions, so there is no `break`/`continue`. To poll until a condition, use a `[delayed_gcode]` that reschedules itself — see `Buffer_Retract_Until_Runout` / `_buffer_retract_poll`. `delayed_gcode` waits for the G-code mutex, so its ticks don't run until the calling top-level command has finished.
 
 ### Template renders at parse time, not execution time
-Sensor reads like `printer["filament_switch_sensor filament_sensor"].filament_detected` inside a `{% if %}` block are evaluated when the template is first rendered — meaning conditional branches based on live printer state inside loops may not reflect what the printer is actually doing mid-execution. Use GCode commands (not Jinja2 logic) for real-time decisions.
+Sensor reads like `printer["filament_switch_sensor filament_sensor"].filament_detected` inside a `{% if %}` block are evaluated when the template is first rendered — meaning conditional branches based on live printer state inside loops may not reflect what the printer is actually doing mid-execution. Use GCode commands (not Jinja2 logic) for real-time decisions. A nested macro call renders when its line executes, so a helper macro called after `M400` does see fresh state.
 
 ### Use `{ action_raise_error("message") }` not `ABORT`
-`ABORT` is **not** a built-in Klipper command. The current macros call `ABORT` on error conditions which will generate a "Unknown command: ABORT" error. The correct way to stop a macro with an error message is:
+`ABORT` is **not** a Klipper command. Unknown commands only print `Unknown command:"ABORT"` and the macro **keeps running**. The correct way to stop a macro with an error message is:
 ```jinja
 { action_raise_error("Error message here") }
 ```
-Or define a custom `[gcode_macro ABORT]` that calls `{ action_raise_error("Aborted") }`.
+It raises while the template renders, so no line of that macro runs — including `RESPOND` lines placed before it. Put all user guidance in the error text. Avoid ` #` and ` ;` inside messages: Klipper's config parser strips them as inline comments.
 
 ### Speed is in mm/min in GCode, mm/s in variables
 `G1 F{speed}` expects mm/min. User variables are in mm/s. Always multiply by 60: `{% set speed = speed_mmsec * 60 %}`.
