@@ -179,8 +179,8 @@ This directory is never touched by Demon's Moonraker update manager. **Filenames
 
 **UNLOAD_FILAMENT:**
 1. User calls Demon's `UNLOAD_FILAMENT`
-2. Demon heats, tip-shapes, then retracts `unload_length` (125mm on this printer) — net ~157mm total, clearing the 100mm hotend path. Extruder has no filament grip when hook fires.
-3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer retracts in segments until the inlet switch clears (~60s through the 1345mm PTFE, 90s max)
+2. Demon heats, purges, tip-shapes (net ~32mm back), then retracts `unload_length` (20mm on this printer) — net ~52mm: out of the melt zone, still gripped by the gears. The buffer does **not** follow the extruder when it pushes filament back, so a long extruder-only retraction bunches filament in the tube and leaves the end in the gears (the old 125mm setting made it snap free when the buffer pulled).
+3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer starts pulling while the extruder retracts `unload_assist_length` (90mm at 18mm/s, a bit slower than the buffer's ~23mm/s), then the buffer retracts alone in segments until the inlet switch clears (~60s through the 1345mm PTFE, 90s max)
 
 ### Enable flags required in `_CUSTOM_EXPANSION_ACTIVE_LIST`
 ```ini
