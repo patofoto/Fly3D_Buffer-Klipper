@@ -21,7 +21,7 @@ These points drive how the macros are written.
 
 - **Two control signals act like the buffer's buttons.** *Feed* (forward) and *Retract* (reverse) are active-low: `VALUE=0` means pressed and the motor runs; `VALUE=1` means released and the motor is idle.
 - **The filament sensor is the buffer's inlet switch.** "Detected" means filament has been inserted into the buffer, not that it has reached the extruder. There is no sensor at the toolhead.
-- **The sensor output freezes while Retract is held.** The firmware waits in a loop until the signal is released and doesn't update the sensor meanwhile. So retraction runs in segments, with a 0.25s release between them so the sensor can update.
+- **With stock firmware, the sensor output freezes while Retract is held.** The firmware waits in a loop until the signal is released and doesn't update the sensor meanwhile. So by default retraction runs in segments, with a 0.25s release between them so the sensor can update. The patched firmware in [patofoto/Buffer](https://github.com/patofoto/Buffer) (`voron` branch, `v1.1-voron.1` or later) keeps the sensor updated; with it, set `buffer_live_sensor: True` and the retract signal stays held for the whole unload.
 - **The buffer follows the extruder in one direction only.** It feeds when the extruder pulls filament. It does *not* retract when the extruder pushes filament back into the tube, so a long extruder-only retraction bunches filament up in the tube and leaves the end in the gears. Unloads therefore have the extruder release the filament *while* the buffer pulls.
 - **The buffer moves filament at about 23mm/s at its stock 260 RPM** (roughly 0.09mm/s per RPM), so a full retraction through 1.35m of PTFE takes about a minute. The speed can be raised over USB (see [Buffer speed](#buffer-speed)); the printer this was developed on runs 400 RPM, about 35mm/s.
 - **The firmware stops feeding after 60s of continuous feeding by default.** It then stops following the extruder until it's reset. With a long tube the first feed can take about that long, so raise the limit (see [Buffer firmware timeout](#buffer-firmware-timeout)).
@@ -178,6 +178,7 @@ In your copy of `mellow_buffer_user_settings.cfg`. If you add a variable to an o
 | `filament_tail_extra_extrude` | 10 | Extra retraction at the end of the standalone unload (mm) |
 | `unload_assist_length` | 0 (off) | Extruder retraction while the buffer starts pulling (Demon unload). 90 is suggested with Demon `unload_length: 20`. |
 | `unload_assist_speed` | 18 | Speed of that retraction: about 80% of the buffer's filament speed (18 at the stock 260 RPM, 28 at 400 RPM) |
+| `buffer_live_sensor` | False | True only with firmware that keeps the sensor updated while Retract is held (patofoto/Buffer `v1.1-voron.1` or later): the unload then holds the signal instead of pausing every 2s. With stock firmware, True makes every unload run to its timeout. |
 | `nozzle_clean_macro` | `CLEAN_NOZZLE` | Any macro, parameters allowed; empty to disable. Skipped with a warning if it doesn't exist. |
 | `cooldown`, `cooldown_temp` | Yes, 150 | Cooldown after the standalone macros |
 

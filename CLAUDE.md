@@ -135,6 +135,7 @@ variable_cooldown: "Yes"
 variable_cooldown_temp: 150
 variable_unload_assist_length: 90.0  # Printer copy: 90 (tracked default 0 = off). Extruder retraction while the buffer starts pulling
 variable_unload_assist_speed: 18.0   # Printer copy: 28. ~80% of the buffer's filament speed (18 at stock 260 RPM, 28 at 400 RPM)
+variable_buffer_live_sensor: False   # Printer copy: True (patched firmware). Hold the retract pin continuously instead of segmented retraction
 ```
 
 New variables must be read with `|default(...)` — users copy this file outside the tracked folder, so their copy can be older than the macros (a missing variable silently renders as 0 otherwise).
@@ -250,7 +251,9 @@ It raises while the template renders, so no line of that macro runs — includin
 
 The sensor is the buffer's **inlet filament switch** (firmware ENDSTOP_3 on PB7), relayed to the printer on buffer PB15 → PF4. There is no sensor at the extruder: "detected" only means filament is in the buffer.
 
-**PB15 freezes while the retract signal is held.** The firmware's `motor_control()` sits in a `while (BACK_SIGNAL_PIN == LOW)` loop and never refreshes PB15, so holding `_Retract_Button` LOW keeps the sensor at "present" no matter where the filament is. `Buffer_Retract_Until_Runout` releases the pin for 0.25s between retraction segments so the firmware can refresh it. The same applies to `_Feed_Button` (`FRONT_SIGNAL_PIN`).
+**With stock firmware, PB15 freezes while the retract signal is held.** The firmware's `motor_control()` sits in a `while (BACK_SIGNAL_PIN == LOW)` loop and never refreshes PB15, so holding `_Retract_Button` LOW keeps the sensor at "present" no matter where the filament is. In segmented mode (default) `Buffer_Retract_Until_Runout` releases the pin for 0.25s between retraction segments so the firmware can refresh it. The same applies to `_Feed_Button` (`FRONT_SIGNAL_PIN`).
+
+**This printer's firmware (`v1.1-voron.1`) fixes that** (`update_runout_output()` in both wait loops), so the printer's settings copy sets `buffer_live_sensor: True`: the retract pin stays held and the sensor is checked every 0.5s. Live mode on stock firmware would never see the sensor clear (every unload ends on TIMEOUT).
 
 Other firmware behavior (patofoto/Buffer `lib/buffer/buffer.cpp`): auto-feed stops with an internal error after 60s of continuous forward motion, and releasing the retract signal also sets that error flag, so auto-feed stays off until a forward press or until the filament leaves the inlet switch.
 
