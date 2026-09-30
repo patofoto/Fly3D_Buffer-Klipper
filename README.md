@@ -126,9 +126,9 @@ Recommended settings for a Stealthburner/Galileo 2 with a Revo (100mm from nozzl
 |---|---|---|
 | Demon user settings | `load_length: 80` | The fast load move stops before the melt zone |
 | Demon user settings | `load_purge_length: 70` | The rest of the path plus about 50mm of purge, at 7mm/s |
-| Demon user settings | `unload_length: 20` | Demon only pulls the filament out of the hot zone; the rest happens with both motors |
+| Demon user settings | `unload_length: 10` | Demon only pulls the filament gently out of the hot zone; the rest happens with both motors. 20 also works but leaves a longer extruder-only pull before the buffer starts; 0 made the tip snap slightly. |
 | Demon user settings | `max_extrude_speed: 7` | A purge speed the hotend can melt. Demon warns about values below 15, which is harmless. |
-| Your buffer settings | `unload_assist_length: 90`, `unload_assist_speed: 18` (28 with the buffer at 400 RPM) | The extruder releases the filament while the buffer pulls |
+| Your buffer settings | `unload_assist_length: 100`, `unload_assist_speed: 18` (28 with the buffer at 400 RPM) | The extruder releases the filament while the buffer pulls. Keep `unload_length` + `unload_assist_length` at 110. |
 
 **Loading:** insert filament into the buffer and wait for it to feed to the extruder gears and stop. Then run `LOAD_FILAMENT`.
 
@@ -176,7 +176,7 @@ In your copy of `mellow_buffer_user_settings.cfg`. If you add a variable to an o
 | `hotend_path_length` | 100 | Nozzle tip to extruder gears (mm) |
 | `buffer_startup_delay`, `buffer_pulse_interval`, `buffer_pulse_duration` | 0.5, 5.0, 0.3 | Buffer pulsing during the standalone unload (pulse duration ~0.2 at 400 RPM) |
 | `filament_tail_extra_extrude` | 10 | Extra retraction at the end of the standalone unload (mm) |
-| `unload_assist_length` | 0 (off) | Extruder retraction while the buffer starts pulling (Demon unload). 90 is suggested with Demon `unload_length: 20`. |
+| `unload_assist_length` | 100 | Extruder retraction while the buffer starts pulling (Demon unload), for Demon `unload_length: 10`. 0 turns it off. |
 | `unload_assist_speed` | 18 | Speed of that retraction: about 80% of the buffer's filament speed (18 at the stock 260 RPM, 28 at 400 RPM) |
 | `buffer_live_sensor` | False | True only with firmware that keeps the sensor updated while Retract is held (patofoto/Buffer `v1.1-voron.1` or later): the unload then holds the signal instead of pausing every 2s. With stock firmware, True makes every unload run to its timeout. |
 | `nozzle_clean_macro` | `CLEAN_NOZZLE` | Any macro, parameters allowed; empty to disable. Skipped with a warning if it doesn't exist. |
@@ -191,7 +191,7 @@ In your copy of `mellow_buffer_user_settings.cfg`. If you add a variable to an o
 | "Still retracting from the last unload" | Wait for `Filament ejected`, or run `BUFFER_STOP`. |
 | The extruder can't grab the filament | The tip hasn't reached the gears, or it's bent. Recut it at an angle and let the buffer feed it until it stops at the gears. |
 | Extruder skips during a load or unload purge | The purge is faster than the hotend can melt. Use the Demon settings above (a short fast move, then a 7mm/s purge). |
-| Unload "snaps", or the filament end stays in the extruder | The extruder pushed filament back while the buffer was idle. Use Demon `unload_length: 20` with `unload_assist_length: 90`. |
+| Unload "snaps", or the filament end stays in the extruder | The extruder pushed filament back while the buffer was idle, or pulled the tip out of the hot zone too fast. Use Demon `unload_length: 10` with `unload_assist_length: 100`. |
 | Unload ends with "Timeout reached" but the filament came out | Your tube needs more time. Raise `TIMEOUT` in the hook line. |
 | The buffer stops feeding or following the extruder | The firmware's feed timeout fired. Short-press the buffer's forward key or run `Buffer_Feeding` to reset it, and raise the timeout. |
 | "No filament came back through the buffer inlet" (after a runout) | The leftover piece didn't reach the switch within 20s. Pull it out by hand. |

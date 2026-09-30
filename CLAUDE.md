@@ -133,7 +133,7 @@ variable_filament_tail_extra_extrude: 10.0  # Extra mm for stringing handling
 variable_nozzle_clean_macro: "CLEAN_NOZZLE"  # Any macro name (params allowed); skipped with a warning if it doesn't exist
 variable_cooldown: "Yes"
 variable_cooldown_temp: 150
-variable_unload_assist_length: 90.0  # Printer copy: 90 (tracked default 0 = off). Extruder retraction while the buffer starts pulling
+variable_unload_assist_length: 100.0 # Template default and printer copy. Extruder retraction while the buffer starts pulling (macro fallback 0 = off for older copies)
 variable_unload_assist_speed: 18.0   # Printer copy: 28. ~80% of the buffer's filament speed (18 at stock 260 RPM, 28 at 400 RPM)
 variable_buffer_live_sensor: False   # Printer copy: True (patched firmware). Hold the retract pin continuously instead of segmented retraction
 ```
@@ -192,8 +192,8 @@ This directory is never touched by Demon's Moonraker update manager. **Filenames
 
 **UNLOAD_FILAMENT:**
 1. User calls Demon's `UNLOAD_FILAMENT`
-2. Demon heats, purges, tip-shapes (net ~32mm back), then retracts `unload_length` (20mm on this printer) — net ~52mm: out of the melt zone, still gripped by the gears. The buffer does **not** follow the extruder when it pushes filament back, so a long extruder-only retraction bunches filament in the tube and leaves the end in the gears (the old 125mm setting made it snap free when the buffer pulled).
-3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer starts pulling while the extruder retracts `unload_assist_length` (90mm at 28mm/s, ~80% of the buffer's ~35mm/s at 400 RPM), then the buffer retracts alone in segments until the inlet switch clears (~40s through the 1345mm PTFE at 400 RPM, 90s max)
+2. Demon heats, purges, tip-shapes (net ~32mm back), then retracts `unload_length` (10mm on this printer) — net ~42mm: out of the melt zone, still gripped by the gears. Tested 2026-09-30: 20 leaves ~3.2s of extruder-only retraction before the buffer starts, 0 (~1.7s) made the tip snap slightly when the assist pulled it out of the hot zone at 28mm/s, 10 (~2.5s) has no snap. The remaining gap is Demon's hardcoded tip-shaping −12. The buffer does **not** follow the extruder when it pushes filament back, so a long extruder-only retraction bunches filament in the tube and leaves the end in the gears (the old 125mm setting made it snap free when the buffer pulled).
+3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer starts pulling while the extruder retracts `unload_assist_length` (100mm at 28mm/s; keep unload_length + assist = 110, ~80% of the buffer's ~35mm/s at 400 RPM), then the buffer retracts alone in segments until the inlet switch clears (~40s through the 1345mm PTFE at 400 RPM, 90s max)
 4. After a **runout** the sensor is already clear when the hook fires (the leftover piece sits just past the inlet switch). With the assist enabled, the hook still releases the extruder and pulls; the piece slides back through the switch (sensor reads filament again) and retraction stops when it clears. If nothing reappears within 20s of retraction it stops and asks for a manual check.
 
 **M600** is Demon's `_FIL_CHANGE_PARK`: it only parks (via `PAUSE`); the user runs `UNLOAD_FILAMENT` / `LOAD_FILAMENT` while paused, which go through the same `_FIL_UNLOAD` / `_FIL_LOAD` and hooks. Demon skips auto-cool while paused.
