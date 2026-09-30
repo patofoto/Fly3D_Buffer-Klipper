@@ -10,6 +10,21 @@ Macros must be compatible with (or callable from) the load/unload macros in:
 
 ---
 
+## Printer SSH Access
+
+The live printer is accessible via SSH for reading configs and installed macros:
+- **Host:** `pato@10.0.10.44`
+- **Config path:** `~/printer_data/config/`
+- **Password:** provide in chat when needed (do not store here — file is tracked by git)
+
+## Preferred Workflow for Printer Changes
+
+1. **Repo-tracked files** (anything in `Fly3D_Buffer/`) — edit locally, commit, push to GitHub, Moonraker syncs automatically. Never write these directly on the printer.
+2. **Printer-only files** (e.g. `Demon_User_Files/demon_custom_expansion_v*.cfg`) — these can't sync from our repo. Provide the user with the exact lines to change and let them edit in Mainsail/Fluidd. Do NOT write directly via SSH unless the user explicitly asks.
+3. **SSH reads** are acceptable for inspecting live config, but prefer asking the user to paste content from Mainsail to save tokens.
+
+---
+
 ## Hardware Context
 
 | Component | Details |
@@ -19,7 +34,10 @@ Macros must be compatible with (or callable from) the load/unload macros in:
 | Buffer | FLY-LLL PLUS (Mellow/Fly3D) |
 | Buffer firmware | v1.1.x+ — [patofoto/Buffer](https://github.com/patofoto/Buffer) (forked from [Fly3DTeam/Buffer](https://github.com/Fly3DTeam/Buffer)) |
 | Printer Klipper config backup | [patofoto/Voron_2.4_350_Backup](https://github.com/patofoto/Voron_2.4_350_Backup/tree/main/printer_data/config) |
+| Hotend | Revo Voron |
 | Extruder | Stealthburner + Galileo 2 (gear ratio 9:1, rotation_distance 48.02976) |
+| hotend_path_length | 100mm (Revo Voron nozzle tip → Galileo 2 gear center) |
+| Buffer→Extruder PTFE | ~1345mm (buffer motor exit → extruder entrance) |
 
 ---
 
@@ -125,14 +143,29 @@ The buffer firmware uses `VACTUAL` register: `SPEED * 64 * 200 / 60 / 0.715 ≈ 
 
 ## Demon Klipper Essentials Integration Notes
 
-Integration uses Demon's `demon_custom_expansion.cfg` hooks — a user-owned file that Demon's update manager never overwrites. Our macros plug into four hooks around Demon's native load/unload sequences. See `demon_buffer_integration.cfg` in this repo for the exact code to paste.
+Integration uses Demon's `demon_custom_expansion_v*.cfg` hooks — a user-owned file that Demon's update manager never overwrites. Our macros plug into four hooks around Demon's native load/unload sequences. See `demon_buffer_integration.cfg` in this repo for the exact code to paste.
+
+### DKEU User Variable File Locations
+
+All user-editable DKEU files live in:
+```
+~/printer_data/config/Demon_User_Files/
+```
+This directory is never touched by Demon's Moonraker update manager. **Filenames include version numbers that change with each DKEU update** — always `ls` the directory to find current names before editing. File patterns and purposes:
+
+| Pattern | Purpose |
+|---|---|
+| `demon_custom_expansion_v*.cfg` | Buffer integration hooks go here |
+| `demon_user_settings_v*.cfg` | Core settings: `unload_length`, park position, auto-cool, etc. |
+| `demon_user_settings_filament_variables_v*.cfg` | Per-filament PA, retraction, temps |
+| `demon_user_settings_cleaner_variables_v*.cfg` | Nozzle cleaner / purge bucket settings |
 
 ### Hook mapping
 
 | Demon hook | Buffer action | Macro called |
 |---|---|---|
 | `_CUSTOM_PRE_LOAD` | Check filament is at extruder before Demon engages | `Buffer_Assert_Filament_Detected` |
-| `_CUSTOM_POST_UNLOAD` | Retract filament tail out of buffer after Demon clears hotend | `Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5` |
+| `_CUSTOM_POST_UNLOAD` | Buffer retracts filament tail after Demon's unload | `Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5` |
 | `_CUSTOM_PRE_LOAD_CLEAN` | Same as PRE_LOAD (applies to LOAD_CLEAN) | `Buffer_Assert_Filament_Detected` |
 | `_CUSTOM_POST_UNLOAD_CLEAN` | Same as POST_UNLOAD (applies to UNLOAD_CLEAN) | `Buffer_Retract_Until_Runout TIMEOUT=60 POLL=0.5` |
 
@@ -146,7 +179,7 @@ Integration uses Demon's `demon_custom_expansion.cfg` hooks — a user-owned fil
 
 **UNLOAD_FILAMENT:**
 1. User calls Demon's `UNLOAD_FILAMENT`
-2. Demon heats hotend, retracts ~32mm net — enough to clear the extruder grip
+2. Demon heats, tip-shapes, then retracts `unload_length` (125mm on this printer) — net ~157mm total, clearing the 100mm hotend path. Extruder has no filament grip when hook fires.
 3. `_CUSTOM_POST_UNLOAD` → `Buffer_Retract_Until_Runout` → buffer motor runs until sensor clears (60s max)
 
 ### Enable flags required in `_CUSTOM_EXPANSION_ACTIVE_LIST`
